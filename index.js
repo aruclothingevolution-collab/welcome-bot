@@ -1,39 +1,62 @@
+
 const { Telegraf } = require('telegraf');
-require('node:process').loadEnvFile();
+const http = require('node:http');
+const fs = require('node:fs');
+
+if (fs.existsSync('.env')) {
+  process.loadEnvFile('.env');
+}
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
-const welcomeMessage = `👋 Welcome to our Investment Channel!
-Thank you for joining us.
-Interested in our trading services, investment information, or need assistance?
-📩 Contact our Admin directly: https://t.me/MitchellVip
-We're happy to assist you!`;
-
-bot.start(async (ctx) => {
-  await ctx.reply(welcomeMessage);
+bot.start((ctx) => {
+  return ctx.reply('Welcome to End With Michelle!');
 });
 
-bot.on('chat_join_request', async (ctx) => {
-  const request = ctx.update.chat_join_request;
+const port = Number(process.env.PORT || 3000);
+const webhookPath = '/telegram-webhook';
+
+const server = http.createServer(async (req, res) => {
+  if (req.url === '/' && req.method === 'GET') {
+    res.writeHead(200);
+    res.end('Telegram bot is running');
+    return;
+  }
+
+  if (req.url !== webhookPath || req.method !== 'POST') {
+    res.writeHead(404);
+    res.end('Not found');
+    return;
+  }
 
   try {
-    // Send the private welcome before approving the request.
-    await ctx.telegram.sendMessage(
-      request.user_chat_id,
-      welcomeMessage
-    );
+    let body = '';
+    for await (const chunk of req) {
+      body += chunk;
+    }
 
-    await ctx.telegram.approveChatJoinRequest(
-      request.chat.id,
-      request.from.id
-    );
-
-    console.log('Welcome sent and join request approved.');
+    await bot.handleUpdate(JSON.parse(body));
+    res.writeHead(200);
+    res.end('OK');
   } catch (error) {
-    console.error('Join request processing failed:', error.message);
+    console.error(error);
+    res.writeHead(500);
+    res.end('Error');
   }
 });
 
-bot.launch()
-  .then(() => console.log('Welcome Bot is running!'))
-  .catch(console.error);
+async function start() {
+  server.listen(port, '0.0.0.0');
+
+  if (process.env.RENDER_EXTERNAL_URL) {
+    await bot.telegram.setWebhook(
+      process.env.RENDER_EXTERNAL_URL + webhookPath
+    );
+    console.log('Webhook configured');
+  } else {
+    await bot.launch();
+    console.log('Bot running locally');
+  }
+}
+
+start().catch(console.error);
